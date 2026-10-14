@@ -20,6 +20,7 @@ import (
 	_ "github.com/sleuth-io/sx/v2/internal/clients/kirocrew"       // Register KiroCrew client
 	_ "github.com/sleuth-io/sx/v2/internal/clients/openclaw"       // Register OpenClaw client
 	_ "github.com/sleuth-io/sx/v2/internal/clients/opencode"       // Register OpenCode client
+	_ "github.com/sleuth-io/sx/v2/internal/clients/scout"          // Register Microsoft Scout client
 	"github.com/sleuth-io/sx/v2/internal/commands"
 	"github.com/sleuth-io/sx/v2/internal/config"
 	"github.com/sleuth-io/sx/v2/internal/git"
