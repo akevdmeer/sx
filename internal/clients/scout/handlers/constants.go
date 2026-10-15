@@ -47,6 +47,12 @@ package handlers
 // 2026-08-21), plus local build observations from Scout 1.0.70 (Windows
 // desktop agent). Treat the names below as observed behavior, not a
 // published contract.
+//
+// Validated end-to-end 2026-10-15 on Scout 1.0.70 (Windows): skills sx
+// installs into <root>/skills/ are discovered by Scout. The skills/
+// directory holds bundled and user skills side by side. Re-verify on
+// Scout updates — the product is in private preview and its layout is a
+// moving target.
 const (
 	// RootScoutDir is the preferred Scout root directory under the home dir.
 	RootScoutDir = ".scout"
