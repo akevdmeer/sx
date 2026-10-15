@@ -1,8 +1,10 @@
 // Package scout implements the clients.Client interface for Microsoft
-// Scout, the Windows desktop agent. It supports only the skill asset type,
-// installs into the global (home-dir) tier under <root>/skills/, and detects
-// its root via Scout-specific filesystem markers (see handlers/constants.go
-// for the tier and marker rationale).
+// Scout, the Windows desktop agent. It supports the skill asset type
+// (global tier under <root>/skills/) and remote-HTTP MCP servers
+// (registered in <root>/m-mcp-servers.json — merge-not-replace semantics
+// that preserve Scout's oauthAlias bindings and builtins; see
+// handlers/constants.go for the tier and marker rationale), and detects
+// its root via Scout-specific filesystem markers.
 //
 // This is an experimental draft client: every detection and install decision
 // is logged at debug level to sx.log so field users can diagnose what sx saw.
@@ -42,6 +44,7 @@ func NewClient() *Client {
 			"Microsoft Scout",
 			[]asset.Type{
 				asset.TypeSkill,
+				asset.TypeMCP,
 			},
 		),
 	}
@@ -219,6 +222,9 @@ func (c *Client) InstallAssets(ctx context.Context, req clients.InstallRequest) 
 		case asset.TypeSkill:
 			handler := handlers.NewSkillHandler(bundle.Metadata)
 			installErr = handler.Install(ctx, bundle.ZipData, targetBase)
+		case asset.TypeMCP:
+			handler := handlers.NewMCPHandler(bundle.Metadata)
+			installErr = handler.Install(ctx, bundle.ZipData, targetBase)
 		default:
 			log.Debug("scout: install: unsupported asset type", "asset", bundle.Asset.Name, "type", bundle.Metadata.Asset.Type.Key)
 			result.Status = clients.StatusSkipped
@@ -233,7 +239,12 @@ func (c *Client) InstallAssets(ctx context.Context, req clients.InstallRequest) 
 			result.Message = fmt.Sprintf("Installation failed: %v", installErr)
 		} else {
 			result.Status = clients.StatusSuccess
-			result.Message = "Installed to " + filepath.Join(targetBase, handlers.DirSkills, bundle.Asset.Name)
+			switch bundle.Metadata.Asset.Type {
+			case asset.TypeMCP:
+				result.Message = "Registered in " + filepath.Join(targetBase, handlers.FileMCPServers)
+			default:
+				result.Message = "Installed to " + filepath.Join(targetBase, handlers.DirSkills, bundle.Asset.Name)
+			}
 		}
 
 		resp.Results = append(resp.Results, result)
@@ -277,6 +288,9 @@ func (c *Client) UninstallAssets(ctx context.Context, req clients.UninstallReque
 		case asset.TypeSkill:
 			handler := handlers.NewSkillHandler(meta)
 			uninstallErr = handler.Remove(ctx, targetBase)
+		case asset.TypeMCP:
+			handler := handlers.NewMCPHandler(meta)
+			uninstallErr = handler.Remove(ctx, targetBase)
 		default:
 			log.Debug("scout: uninstall: unsupported asset type", "asset", a.Name, "type", a.Type.Key)
 			result.Status = clients.StatusSkipped
@@ -299,7 +313,10 @@ func (c *Client) UninstallAssets(ctx context.Context, req clients.UninstallReque
 	return resp, nil
 }
 
-// ListAssets returns all installed skills for a given scope
+// ListAssets returns all installed skills for a given scope. Skills only:
+// MCP servers are registered in m-mcp-servers.json, not as skills
+// directories, so they do not appear here (follows the github_copilot
+// pattern — the skills listing is not conflated with MCP registrations).
 func (c *Client) ListAssets(ctx context.Context, scope *clients.InstallScope) ([]clients.InstalledSkill, error) {
 	log := logger.Get()
 
@@ -441,6 +458,10 @@ func (c *Client) GetAssetPath(_ context.Context, name string, assetType asset.Ty
 	switch assetType {
 	case asset.TypeSkill:
 		return filepath.Join(targetBase, handlers.DirSkills, name), nil
+	case asset.TypeMCP:
+		// MCP servers have no per-asset directory; the registry file is the
+		// closest thing to an install path.
+		return filepath.Join(targetBase, handlers.FileMCPServers), nil
 	default:
 		return "", fmt.Errorf("path not supported for type: %s", assetType)
 	}
