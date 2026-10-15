@@ -41,6 +41,48 @@ package handlers
 // m-settings.json — its format is undocumented, and parsing it would be a
 // heuristic that breaks silently on format changes.
 //
+// # MCP tier decision: m-mcp-servers.json vs m-settings.json
+//
+// Scout splits MCP state across two files:
+//
+//   - m-mcp-servers.json holds the server DEFINITIONS: a top-level
+//     "servers" object keyed by server name. Builtins ("builtin": true)
+//     are Scout's own — sx never modifies or removes them. Custom remote
+//     entries ("builtin": false) carry a "config" object {name, url}
+//     with NO transport/type field (none observed), plus "tools", Scout's
+//     cached discovered-tools list.
+//   - m-settings.json holds permissions and enablement (a
+//     "permissions.servers" area whose keys do NOT match custom server
+//     names one-to-one — the keying is unresolved). sx therefore NEVER
+//     WRITES m-settings.json this iteration: a wrong guess there could
+//     disable working servers. Reads remain fine (it is a marker).
+//
+// Reinstall is MERGE, not replace: sx manages exactly "builtin" (false),
+// "config.name", and "config.url" on a servers entry. All other keys
+// survive — especially "config.oauthAlias" (Scout's OAuth identity
+// binding: a real box has an OAuth-bound entry whose oauthAlias a
+// replace-on-reinstall would destroy, breaking working OAuth), any
+// unknown config keys, and the existing "tools" array (initialized []
+// only on NEW entries; preserved on reinstall).
+//
+// # Remote-only MCP scope
+//
+// Only remote HTTP (http/sse) MCP servers are supported. No stdio or
+// packaged-server entries: no stdio or packaged Scout entry shapes have
+// been observed, so writing one would be invented format. Packaged
+// (content-carrying) zips and non-remote transports are refused at
+// install. Repo/path scopes reuse the client's existing
+// unsupported-scope errors — global only.
+//
+// # Open questions (documented, not decided)
+//
+//   - Restart/reload: unknown whether Scout picks up m-mcp-servers.json
+//     changes without a Scout restart or a reload event.
+//   - SSE shape: unverified whether an SSE endpoint needs anything beyond
+//     config.url.
+//   - stdio/packaged shape: no observed entry to copy from.
+//   - m-settings.json keying: unresolved (see the tier decision above).
+//
 // # Source basis
 //
 // Microsoft Learn, "Use Microsoft Scout" and the Scout FAQ (ms.date
@@ -50,9 +92,13 @@ package handlers
 //
 // Validated end-to-end 2026-10-15 on Scout 1.0.70 (Windows): skills sx
 // installs into <root>/skills/ are discovered by Scout. The skills/
-// directory holds bundled and user skills side by side. Re-verify on
-// Scout updates — the product is in private preview and its layout is a
-// moving target.
+// directory holds bundled and user skills side by side. Skills hot-load
+// is confirmed: skill installation into ~/.scout/skills is immediately
+// visible in the running Scout session as global-* skills. MCP server
+// definitions and the m-settings.json permission layout were observed in
+// Scout's own files on the same box; sx's MCP handling is built on those
+// observations. Re-verify on Scout updates — the product is in private
+// preview and its layout is a moving target.
 const (
 	// RootScoutDir is the preferred Scout root directory under the home dir.
 	RootScoutDir = ".scout"
@@ -70,6 +116,18 @@ const (
 	// GetVersion normally returns "". Update this constant if Microsoft
 	// ships a differently named version file. NOT m-settings.json.
 	VersionFile = "version"
+
+	// FileMCPServers is the MCP server definition registry under the
+	// root: top-level "servers" object keyed by server name. sx registers
+	// remote-HTTP custom servers here with MERGE-not-replace semantics;
+	// see the package comment for the full decision.
+	FileMCPServers = "m-mcp-servers.json"
+
+	// FileSettings is Scout's settings file (permissions/enablement) under
+	// the root. DO NOT WRITE IT: its permissions.servers keys do not match
+	// custom server names one-to-one and the keying is unresolved (see the
+	// package comment). Reading/stat-ing it as a marker is fine.
+	FileSettings = "m-settings.json"
 )
 
 // ScoutMarkers lists filesystem entries (file or directory, directly under a
@@ -77,8 +135,9 @@ const (
 // marker is sufficient. See the package comment for the discrimination
 // rationale against the github_copilot client's bare ~/.copilot check.
 var ScoutMarkers = []string{
-	"m-mcp-servers.json", // Scout-managed MCP server registry (file)
-	"m-skills",           // Scout's cloud-synced skills tier (directory)
-	"bundled-skills",     // skills bundled with the Scout app (directory)
-	"copilot",            // the COPILOT_HOME dir Scout creates under its root (directory)
+	FileMCPServers,   // Scout-managed MCP server registry (file)
+	FileSettings,     // Scout settings/permissions file (marker ONLY — never written)
+	"m-skills",       // Scout's cloud-synced skills tier (directory)
+	"bundled-skills", // skills bundled with the Scout app (directory)
+	"copilot",        // the COPILOT_HOME dir Scout creates under its root (directory)
 }

@@ -26,6 +26,8 @@ func NewHandler(assetType asset.Type, meta *metadata.Metadata) (Handler, error) 
 	switch assetType {
 	case asset.TypeSkill:
 		return NewSkillHandler(meta), nil
+	case asset.TypeMCP:
+		return NewMCPHandler(meta), nil
 	default:
 		return nil, fmt.Errorf("unsupported asset type for Scout: %s", assetType.Key)
 	}

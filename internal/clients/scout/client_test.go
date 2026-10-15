@@ -2,6 +2,7 @@ package scout
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +40,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	if client.RuleCapabilities() != nil {
-		t.Error("RuleCapabilities() should be nil (skills-only client)")
+		t.Error("RuleCapabilities() should be nil (no rule support)")
 	}
 }
 
@@ -50,7 +51,11 @@ func TestSupportsAssetType(t *testing.T) {
 		t.Error("Scout should support skill assets")
 	}
 
-	unsupported := []asset.Type{asset.TypeCommand, asset.TypeAgent, asset.TypeRule, asset.TypeHook, asset.TypeMCP}
+	if !client.SupportsAssetType(asset.TypeMCP) {
+		t.Error("Scout should support mcp assets (remote HTTP, experimental)")
+	}
+
+	unsupported := []asset.Type{asset.TypeCommand, asset.TypeAgent, asset.TypeRule, asset.TypeHook}
 	for _, assetType := range unsupported {
 		if client.SupportsAssetType(assetType) {
 			t.Errorf("Scout should not support %s assets", assetType.Key)
@@ -82,6 +87,14 @@ func TestDetectRootMatrix(t *testing.T) {
 		{
 			name:           "scout root with bundled-skills marker",
 			setup:          func(home string) { mkdir(t, filepath.Join(home, handlers.RootScoutDir, "bundled-skills")) },
+			wantDetected:   true,
+			wantRootSuffix: handlers.RootScoutDir,
+		},
+		{
+			name: "scout root with m-settings.json marker file (read-only marker)",
+			setup: func(home string) {
+				writeFile(t, filepath.Join(home, handlers.RootScoutDir, handlers.FileSettings), "{}")
+			},
 			wantDetected:   true,
 			wantRootSuffix: handlers.RootScoutDir,
 		},
@@ -384,6 +397,133 @@ func TestInstallRemoveVerifyFlow(t *testing.T) {
 	}
 }
 
+// TestMCPInstallRemoveVerifyFlow exercises the full remote-MCP lifecycle
+// through the client dispatch: install registers the server in
+// <root>/m-mcp-servers.json with merge semantics, verify reports it,
+// remove deletes it, and builtins are never touched.
+func TestMCPInstallRemoveVerifyFlow(t *testing.T) {
+	home := t.TempDir()
+	setFakeHome(t, home)
+	root := mkdir(t, filepath.Join(home, handlers.RootScoutDir, "m-skills"))
+	root = filepath.Dir(root)
+
+	client := NewClient()
+	ctx := context.Background()
+	scope := &clients.InstallScope{Type: clients.ScopeGlobal}
+
+	mcpMeta := &metadata.Metadata{
+		Asset: metadata.Asset{
+			Name:    "lab",
+			Version: "1",
+			Type:    asset.TypeMCP,
+		},
+		MCP: &metadata.MCPConfig{
+			Transport: "http",
+			URL:       "https://agentgateway.example/mcp/v2",
+		},
+	}
+
+	// A realistic pre-existing registry: builtins + an OAuth-bound custom
+	// entry whose oauthAlias a replace-on-reinstall would destroy.
+	writeFile(t, filepath.Join(root, "m-mcp-servers.json"), `{
+  "servers": {
+    "filesystem": { "builtin": true, "tools": [] },
+    "lab": {
+      "builtin": false,
+      "config": {
+        "name": "lab",
+        "url": "https://agentgateway.example/mcp",
+        "oauthAlias": "user@example.org"
+      },
+      "tools": ["some_tool"]
+    }
+  }
+}`)
+
+	req := clients.InstallRequest{
+		Assets: []*clients.AssetBundle{
+			{
+				Asset: &lockfile.Asset{
+					Name:    "lab",
+					Version: "1",
+					Type:    asset.TypeMCP,
+				},
+				Metadata: mcpMeta,
+				ZipData:  mustConfigOnlyZip(t),
+			},
+		},
+		Scope: scope,
+	}
+
+	resp, err := client.InstallAssets(ctx, req)
+	if err != nil {
+		t.Fatalf("InstallAssets() error = %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Status != clients.StatusSuccess {
+		t.Fatalf("Install status = %v, want success", resp.Results)
+	}
+
+	// The registry must now show the merged entry: url updated, oauthAlias
+	// and tools preserved, builtin untouched.
+	data, err := os.ReadFile(filepath.Join(root, "m-mcp-servers.json"))
+	if err != nil {
+		t.Fatalf("read m-mcp-servers.json: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse m-mcp-servers.json: %v", err)
+	}
+	servers := doc["servers"].(map[string]any)
+	lab := servers["lab"].(map[string]any)
+	config := lab["config"].(map[string]any)
+	if config["url"] != "https://agentgateway.example/mcp/v2" {
+		t.Errorf("config.url = %v, want updated", config["url"])
+	}
+	if config["oauthAlias"] != "user@example.org" {
+		t.Errorf("config.oauthAlias = %v, want preserved", config["oauthAlias"])
+	}
+	if tools, ok := lab["tools"].([]any); !ok || len(tools) != 1 {
+		t.Errorf("tools = %#v, want preserved [some_tool]", lab["tools"])
+	}
+	if _, ok := servers["filesystem"]; !ok {
+		t.Error("builtin filesystem entry must survive")
+	}
+
+	// VerifyAssets reports the entry as installed (existence + name; URL
+	// drift check is metadata-gated, and the lockfile-shaped metadata here
+	// has no [mcp] section — same degradation as the real verify path).
+	verifyResults := client.VerifyAssets(ctx, []*lockfile.Asset{req.Assets[0].Asset}, scope)
+	if len(verifyResults) != 1 || !verifyResults[0].Installed {
+		t.Fatalf("VerifyAssets() = (%v, %q), want installed", verifyResults, verifyResults[0].Message)
+	}
+
+	// Uninstall removes the custom entry only.
+	uninstallResp, err := client.UninstallAssets(ctx, clients.UninstallRequest{
+		Assets: []asset.Asset{{Name: "lab", Version: "1", Type: asset.TypeMCP}},
+		Scope:  scope,
+	})
+	if err != nil {
+		t.Fatalf("UninstallAssets() error = %v", err)
+	}
+	if len(uninstallResp.Results) != 1 || uninstallResp.Results[0].Status != clients.StatusSuccess {
+		t.Fatalf("Uninstall status = %v, want success", uninstallResp.Results)
+	}
+	data, err = os.ReadFile(filepath.Join(root, "m-mcp-servers.json"))
+	if err != nil {
+		t.Fatalf("read m-mcp-servers.json after uninstall: %v", err)
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse after uninstall: %v", err)
+	}
+	servers = doc["servers"].(map[string]any)
+	if _, exists := servers["lab"]; exists {
+		t.Error("lab entry should be removed after uninstall")
+	}
+	if _, exists := servers["filesystem"]; !exists {
+		t.Error("builtin filesystem entry must survive uninstall")
+	}
+}
+
 func TestInstallSkipsUndetectedAndUnsupportedScopes(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient()
@@ -470,6 +610,17 @@ func TestScanInstalledAssets(t *testing.T) {
 	if len(assets) != 0 {
 		t.Errorf("ScanInstalledAssets() = %v, want empty (draft client does not import)", assets)
 	}
+}
+
+// mustConfigOnlyZip builds a minimal zip containing only metadata.toml, so
+// utils.HasContentFiles reports no content files (config-only install path).
+func mustConfigOnlyZip(t *testing.T) []byte {
+	t.Helper()
+	zipData, err := utils.CreateZipFromContent("metadata.toml", []byte("metadata_version = \"1.0\"\n"))
+	if err != nil {
+		t.Fatalf("create zip entry: %v", err)
+	}
+	return zipData
 }
 
 func mkdir(t *testing.T, path string) string {
