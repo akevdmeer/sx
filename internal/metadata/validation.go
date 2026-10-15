@@ -61,6 +61,7 @@ var (
 		"codex":          true,
 		"openclaw":       true,
 		"opencode":       true,
+		"scout":          true,
 		"kiro":           true,
 		"kirocrew":       true,
 	}

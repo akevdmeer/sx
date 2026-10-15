@@ -2,7 +2,7 @@
 
 sx supports two kinds of AI clients:
 
-1. **File-based clients** (Claude Code, Cursor, Codex, Copilot, Gemini, Kiro, KiroCrew, Cline, OpenCode) — sx writes asset files into well-known directories the client reads on startup. This is the default `sx install` flow.
+1. **File-based clients** (Claude Code, Cursor, Codex, Copilot, Gemini, Kiro, KiroCrew, Cline, OpenCode, Microsoft Scout) — sx writes asset files into well-known directories the client reads on startup. This is the default `sx install` flow.
 2. **Web clients** (claude.ai, chatgpt.com) — sx exposes the vault as an MCP endpoint through the skills.new cloud relay. See [cloud-relay.md](cloud-relay.md).
 
 The two paths are independent. A vault can serve both; the same assets are reachable from a CLI tool reading `.claude/skills/` and from claude.ai talking to the relay.
@@ -26,6 +26,7 @@ Many AI tools ship in two forms: a **desktop IDE** and a **CLI**. These often ha
 | Kiro           | CLI+IDE | Full support. See [Kiro-specific docs](kiro.md) for hook setup.                                |
 | KiroCrew       | Agent   | Skills only, **global scope only**. Dispatched KiroCrew agents load skills from KiroCrew's own crew root — `~/.kiro/crew/skills/` by default, or `$KIROCREW_HOME/skills/` when [`KIROCREW_HOME`](environment-variables.md#kirocrew_home) is set — which is distinct from kiro-cli's `~/.kiro/skills/`. KiroCrew resolves that root from its single data home and never looks for a `.kiro/crew` directory inside a repository, so repo- and path-scoped installs are **skipped** rather than written into the repo tree. A repo-local skill reaches a KiroCrew session through the `kiro` client's repo scope (`<repo>/.kiro/skills/`), which KiroCrew reads as a confined project tree after the operator grants that project. No MCP server or bootstrap hooks. Source: [kirodotdev/KiroCrew](https://github.com/kirodotdev/KiroCrew). |
 | OpenCode       | CLI     | Skills, commands, agents, rules, MCP servers. Config at `~/.config/opencode/` (or `.opencode/` per-repo). Rules are written to `rules/<name>.md` and registered via the `instructions` array in `opencode.json`. |
+| Microsoft Scout | Desktop app | Experimental. Skills only, global tier `<root>/skills/` (root is `~/.scout`, or `~/.copilot` when Scout stores state under `COPILOT_HOME`). Detection is marker-based: sx only treats a root as Scout's when it contains Scout markers (`m-mcp-servers.json`, `m-skills`, `bundled-skills`, `copilot`), so a bare `~/.copilot` (Copilot CLI) is not misdetected. sx never writes into `m-skills/` (Scout's cloud-synced tier). |
 
 ## How hooks reference the sx CLI
 
