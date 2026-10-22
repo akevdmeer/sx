@@ -1,14 +1,9 @@
 name: Desktop App Release
 
-# Builds the desktop app for macOS, Windows, and Linux on the same tags that
-# release the CLI, and uploads the installers to that GitHub release.
-#
-# macOS ships a DMG (first install) plus a zip (the app's auto-update
-# feed). When the signing secrets exist, both are Developer ID-signed,
-# notarized, and stapled and the "-unsigned" name suffix is dropped; see
-# docs/macos-signing.md for the secrets to add once the Apple Developer
-# enrollment lands. Windows artifacts remain unsigned until an
-# Authenticode cert is provisioned.
+# Builds the Windows desktop app on the same tags that release the CLI,
+# and uploads the installers to that GitHub release. This fork ships
+# Windows executables only; the upstream sleuth-io/sx releases cover the
+# other platforms (macOS DMG/zip with signing, Linux tarballs).
 
 on:
   push:
@@ -46,25 +41,6 @@ jobs:
           # tar has no "sx" binary. macOS uses "macos" (not "darwin"), so its
           # names never collide and keep the prefix the app updater expects
           # (sx-app-macos-<arch>, see app/update.go).
-          # Pinned (not macos-latest): the -latest label migrates to new
-          # macOS majors on GitHub's schedule (26 as of June 2026), and a
-          # release builder should change images deliberately, not by
-          # label drift. Bump alongside the Intel entry below.
-          - name: macos-arm64
-            os: macos-15
-            platform: darwin/arm64
-            arch: arm64
-            artifact: sx-app-macos-arm64
-          # macos-13 (the old Intel image) was retired 2025-12-04; jobs
-          # requesting it queue forever — no runner exists to take them.
-          # macos-15-intel is the supported x86_64 image through fall
-          # 2027, after which Intel macOS goes away entirely and this
-          # entry should fold into a darwin/universal build.
-          - name: macos-amd64
-            os: macos-15-intel
-            platform: darwin/amd64
-            arch: amd64
-            artifact: sx-app-macos-amd64
           - name: windows-amd64
             os: windows-latest
             platform: windows/amd64
@@ -73,14 +49,6 @@ jobs:
             os: windows-11-arm
             platform: windows/arm64
             artifact: sx-app-windows-arm64-portable.zip
-          - name: linux-amd64
-            os: ubuntu-latest
-            platform: linux/amd64
-            artifact: sx-app-linux-amd64-portable.tar.gz
-          - name: linux-arm64
-            os: ubuntu-24.04-arm
-            platform: linux/arm64
-            artifact: sx-app-linux-arm64-portable.tar.gz
     steps:
       - name: Checkout
         uses: actions/checkout@v7
