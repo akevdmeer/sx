@@ -63,6 +63,8 @@ changelog:
 
 release:
   draft: false
-  prerelease: auto
+  # Fork patch: fork tags carry a -scout suffix (semver prerelease shape);
+  # publish them as full releases so GitHub serves them as "Latest".
+  prerelease: false
   name_template: "{{.ProjectName}} v{{.Version}}"
 
