@@ -45,10 +45,6 @@ jobs:
             os: windows-latest
             platform: windows/amd64
             artifact: sx-app-windows-amd64-portable.zip
-          - name: windows-arm64
-            os: windows-11-arm
-            platform: windows/arm64
-            artifact: sx-app-windows-arm64-portable.zip
     steps:
       - name: Checkout
         uses: actions/checkout@v7
