@@ -52,13 +52,23 @@ func (a *App) libraryIcon(cfgType config.RepositoryType, name string) string {
 	return a.vaultIconDataURL(name)
 }
 
+// appContext returns the Wails runtime context. Unit tests construct App
+// without starting Wails, leaving a.ctx nil; context.WithTimeout panics on a
+// nil parent, so fall back to Background for those paths.
+func (a *App) appContext() context.Context {
+	if a.ctx == nil {
+		return context.Background()
+	}
+	return a.ctx
+}
+
 // vaultIconDataURL reads the shared icon out of a git/path library's vault.
 func (a *App) vaultIconDataURL(name string) string {
 	store, err := a.vaultIconStore(name)
 	if err != nil {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(a.appContext(), 5*time.Second)
 	defer cancel()
 	data, err := store.GetVaultIcon(ctx)
 	if err != nil {
@@ -144,7 +154,7 @@ func (a *App) ChooseLibraryIcon(name string) (string, error) {
 		return "", err
 	}
 	// Git vaults commit and push the icon; give the sync room to run.
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(a.appContext(), 2*time.Minute)
 	defer cancel()
 	if err := store.SetVaultIcon(ctx, data); err != nil {
 		return "", friendlyVaultError(err)
@@ -163,7 +173,7 @@ func (a *App) ClearLibraryIcon(name string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(a.appContext(), 2*time.Minute)
 	defer cancel()
 	if err := store.SetVaultIcon(ctx, nil); err != nil {
 		return friendlyVaultError(err)

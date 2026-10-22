@@ -15,7 +15,7 @@ import (
 // test would quietly reintroduce that class.
 func newTestApp(t *testing.T) *App {
 	t.Helper()
-	a := &App{}
+	a := &App{ctx: context.Background()}
 	t.Cleanup(a.eventWrites.Wait)
 	return a
 }

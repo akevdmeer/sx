@@ -69,7 +69,10 @@ func (a *App) goEvent(fn func()) {
 }
 
 func NewApp() *App {
-	return &App{}
+	// Default ctx so App methods that derive timeouts work before Wails
+	// startup() replaces it (unit tests construct the App without Wails;
+	// a nil parent panics in context.WithTimeout / exec.CommandContext).
+	return &App{ctx: context.Background()}
 }
 
 func (a *App) startup(ctx context.Context) {
