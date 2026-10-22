@@ -34,7 +34,15 @@ type UpdateInfo struct {
 	Installed bool `json:"installed"`
 }
 
-const releasesURL = "https://api.github.com/repos/sleuth-io/sx/releases/latest"
+// Fork patch (2026-10-22): check this fork's releases, never upstream
+// sleuth-io/sx — upstream releases must not drive this build's UX.
+const releasesURL = "https://api.github.com/repos/akevdmeer/sx/releases/latest"
+
+// autoInstallUpdates — fork patch: fleet builds must not silently swap
+// themselves. Newer fork releases surface as the download banner (and the
+// menu dialog pointing at this fork's release page) instead of being
+// auto-installed.
+const autoInstallUpdates = false
 
 type githubRelease struct {
 	TagName string `json:"tag_name"`
@@ -86,7 +94,7 @@ func (a *App) checkForUpdate() updateOutcome {
 		return updateOutcome{status: "uptodate", version: current}
 	}
 
-	if a.tryAutoUpdate(release) {
+	if autoInstallUpdates && a.tryAutoUpdate(release) {
 		return updateOutcome{status: "installed", version: latest}
 	}
 	return updateOutcome{status: "available", version: latest, url: release.HTMLURL}

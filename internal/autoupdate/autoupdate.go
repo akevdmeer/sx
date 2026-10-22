@@ -20,7 +20,19 @@ import (
 )
 
 const (
-	GithubOwner       = "sleuth-io"
+	// Fork patch (2026-10-22): background self-updates are hard-disabled in
+	// this fork. The earlier fork patch (af2f105 on scout-client, never
+	// merged here) merely pointed the updater at this fork — which was only
+	// a no-op while the fork had no releases. Now that the fork cuts its own
+	// releases, that redirect alone would re-arm silent fleet self-replacement.
+	// Fleet builds never swap themselves; updates land only via an explicit
+	// `sx update` (which targets this fork) or by shipping new builds.
+	autoUpdateDisabled = true
+
+	// Fork patch: even the explicit paths check THIS fork's releases, never
+	// upstream sleuth-io/sx — upstream releases would otherwise outrank fork
+	// git-describe builds and silently replace custom Scout builds.
+	GithubOwner       = "akevdmeer"
 	GithubRepo        = "sx"
 	checkInterval     = 24 * time.Hour
 	updateCacheFile   = "last-update-check"
@@ -153,6 +165,15 @@ func ApplyPendingUpdate() bool {
 		return false
 	}
 
+	// Fork patch (2026-10-22): pending updates are never applied in this
+	// build. The marker hygiene above still runs (invalid and stale markers
+	// are dropped); a valid pending update is discarded, not installed —
+	// fleet builds must not swap themselves.
+	if autoUpdateDisabled {
+		_ = os.Remove(markerPath)
+		return false
+	}
+
 	// Get path to current executable for replacement
 	execPath, err := os.Executable()
 	if err != nil {
@@ -196,6 +217,9 @@ func ClearPendingUpdate() {
 // It only checks once per day (tracked via cache file).
 // This function returns immediately and doesn't block.
 func CheckAndUpdateInBackground() {
+	if autoUpdateDisabled {
+		return
+	}
 	// Run in background goroutine
 	go func() {
 		// Silently ignore errors - we don't want to disrupt the user's workflow
@@ -208,7 +232,7 @@ func CheckAndUpdateInBackground() {
 // If the goroutine gets killed mid-download, the marker survives for Phase 2.
 func checkAndUpdate() error {
 	// Skip if auto-update is disabled via environment (e.g., Homebrew installations)
-	if isEnvTrue("DISABLE_AUTOUPDATER") {
+	if autoUpdateDisabled || isEnvTrue("DISABLE_AUTOUPDATER") {
 		return nil
 	}
 
