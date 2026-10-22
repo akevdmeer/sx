@@ -17,9 +17,9 @@ builds:
     binary: sx
     env:
       - CGO_ENABLED=0
+    # This fork ships Windows executables only; other GOOS targets are
+    # covered by the upstream sleuth-io/sx releases.
     goos:
-      - linux
-      - darwin
       - windows
     goarch:
       - amd64
